@@ -5,7 +5,7 @@
 #   ZIPS_SRC=/path/to/zips sh setup.sh   copy zips from a local folder instead of downloading
 #   BASE_URL=https://.../lab1/data sh setup.sh   override the download location
 set -e
-BASE_URL="${BASE_URL:-https://YOUR-USER.github.io/cv8508-labs/lab1/data}"
+BASE_URL="${BASE_URL:-https://utkarshmall13.github.io/cv8508-labs/lab1/data}"
 ZIPS="human_faces animal_faces backgrounds_objects backgrounds_web fit_test fit_train"
 cd "$(dirname "$0")"
 mkdir -p data
