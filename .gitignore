@@ -3,3 +3,7 @@ _to_delete/
 .DS_Store
 *.bak
 .ipynb_checkpoints/
+.venv/
+out/
+.done_*
+lab*/data/*/
