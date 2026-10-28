@@ -6,7 +6,7 @@
 #   SITE=https://.../lab2 sh setup.sh    override the download location
 set -e
 SITE="${SITE:-https://utkarshmall13.github.io/cv8508-labs/lab2}"
-ZIPS="iiw confusing"
+ZIPS="iiw adelson"
 cd "$(dirname "$0")"
 mkdir -p data
 fetch() {  # fetch <relative path under SITE or SRC> <destination>
@@ -33,9 +33,9 @@ pip install -q --upgrade pip
 pip install -q torch numpy scipy pillow matplotlib
 python - <<'PY'
 import torch, lab2_tools as t
-tr, te, cf = t.load_iiw("train"), t.load_iiw("test"), t.load_confusing()
+tr, te, ad = t.load_iiw("train"), t.load_iiw("test"), t.load_adelson()
 print("ready: torch", torch.__version__, "| cuda", torch.cuda.is_available(), "| mps", torch.backends.mps.is_available())
 print(f"IIW subset: {len(tr)} train / {len(te)} test images, {sum(len(r['comps']) for r in tr)} train judgments")
-print("confusing scenes:", ", ".join(cf))
+print("Adelson image:", ad["image"].shape, "probes:", ", ".join(ad["probes"]))
 PY
 echo "Done. Activate with: source .venv/bin/activate"

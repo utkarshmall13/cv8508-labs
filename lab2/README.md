@@ -15,9 +15,9 @@ sh setup.sh
 
 ## What you get
 
-- `lab2_tools.py`: data loaders (`load_iiw`, `load_confusing`), the human-judgment score `whdr`, the probe measurement `probe_ratio`, and colour helpers `srgb_to_linear` / `linear_to_srgb`.
+- `lab2_tools.py`: data loaders (`load_iiw`, `load_adelson`), the human-judgment score `whdr`, the probe measurement `probe_ratio`, and colour helpers `srgb_to_linear` / `linear_to_srgb`.
 - `data/iiw/`: a small Intrinsic Images in the Wild subset with human "which point is darker paint" judgments.
-- `data/confusing/`: six synthetic scenes with known albedo, including an Adelson-style checker shadow.
+- `data/adelson/`: the checker-shadow image (512x390) with probe boxes on the squares A and B and the true albedo ratio (`adelson.json`).
 
 The handout (`Lab2_Light_or_Paint_Intrinsic_Images.pdf`) has the tasks. Solutions are not in this repository.
 

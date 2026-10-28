@@ -82,16 +82,15 @@ def whdr_dataset(fn, records):
     return float(np.mean([whdr(fn(r["image"]), r) for r in records]))
 
 
-def load_confusing():
-    """Synthetic scenes with known albedo. Returns {name: dict(image, albedo_gt, probes, pairs, ratios, note)}.
-    image / albedo_gt are sRGB-encoded float arrays in [0, 1]; probes are boxes (x0, y0, x1, y1) in fractions of
-    the image size; ratios[ 'q/p' ] gives the ground-truth albedo ratio and the pixel ratio of two probes."""
-    d = os.path.join(DATA, "confusing")
+def load_adelson():
+    """Adelson's checker-shadow image with probe boxes. Returns dict(image, probes, pairs, ratios, note).
+    image is an sRGB-encoded float array in [0, 1]; probes are boxes (x0, y0, x1, y1) in fractions of the image size;
+    ratios['q/p'] holds the true albedo ratio ('albedo_gt') and the ratio of pixel values ('pixels') of probes q and p."""
+    d = os.path.join(DATA, "adelson")
     if not os.path.isdir(d):
         raise FileNotFoundError(f"{d} not found: run `sh setup.sh` first")
-    meta = json.load(open(os.path.join(d, "scenes.json")))
-    return {n: dict(image=load_image(os.path.join(d, n + ".png")), albedo_gt=load_image(os.path.join(d, n + "_albedo_gt.png")), **m)
-            for n, m in meta.items()}
+    meta = json.load(open(os.path.join(d, "adelson.json")))["adelson"]
+    return dict(image=load_image(os.path.join(d, "adelson.png")), **meta)
 
 
 def probe_mean(linear_map, box):
