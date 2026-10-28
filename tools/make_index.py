@@ -9,7 +9,7 @@ for d in labs:
     name = os.path.basename(d); rm = os.path.join(d, "README.md")
     title = open(rm).readline().lstrip("# ").strip() if os.path.exists(rm) else name
     out.append(f"<h2>{html.escape(title)}</h2><ul>")
-    for f in sorted(glob.glob(os.path.join(d, "*.pdf")) + glob.glob(os.path.join(d, "*.sh")) + glob.glob(os.path.join(d, "*.ipynb"))):
+    for f in sorted(glob.glob(os.path.join(d, "*.pdf")) + glob.glob(os.path.join(d, "*.sh")) + glob.glob(os.path.join(d, "*.py")) + glob.glob(os.path.join(d, "*.ipynb"))):
         out.append(f'<li><a href="{name}/{os.path.basename(f)}">{os.path.basename(f)}</a></li>')
     for f in sorted(glob.glob(os.path.join(d, "data", "*.zip"))):
         out.append(f'<li><a href="{name}/data/{os.path.basename(f)}">data/{os.path.basename(f)}</a></li>')
