@@ -4,7 +4,7 @@ import glob, os, html
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 out = ['<!doctype html><meta charset="utf-8"><title>CV8508 labs</title>',
        '<h1>CV8508: Perceptual Cognition for Computer Vision, labs</h1>']
-labs = sorted(glob.glob(os.path.join(root, "lab*")), key=lambda p: int("".join(c for c in os.path.basename(p) if c.isdigit()) or 0))
+labs = sorted(glob.glob(os.path.join(root, "lab*")), key=lambda p: float(os.path.basename(p)[3:].replace("p", ".") or 0))
 for d in labs:
     name = os.path.basename(d); rm = os.path.join(d, "README.md")
     title = open(rm).readline().lstrip("# ").strip() if os.path.exists(rm) else name
