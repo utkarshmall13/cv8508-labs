@@ -51,4 +51,4 @@ pip install -q --upgrade pip
 pip install -q torch torchvision antialiased-cnns numpy scipy pillow matplotlib
 export TORCH_HOME="$PWD/models"
 python lab5_tools.py
-echo "Done. Activate with:  source .venv/bin/activate && export TORCH_HOME=\$PWD/models"
+echo "Done. Activate with:  source .venv/bin/activate"

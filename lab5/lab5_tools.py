@@ -9,6 +9,8 @@ Read this file first. Everything works on float tensors x of shape (B, 3, H, W) 
     p = probs(models['resnet50'], x)             # (50, 1000) softmax
     ptrue(p, labels), top1(p)                    # score of the right class, the model's answer
 
+The weights are looked up in lab5/models (TORCH_HOME is set for you).
+
 Models: 'resnet50' is torchvision's standard ResNet-50 (stride-2 convolutions and max pooling, no
 low-pass filter). 'resnet50_aa' is the anti-aliased ResNet-50 of Zhang (2019), fine-tuned from the same
 standard weights: BlurPool = blur with [1 3 3 1]/8 (separably), then subsample.
@@ -17,12 +19,14 @@ import csv
 import glob
 import os
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("TORCH_HOME", os.path.join(HERE, "models"))   # weights downloaded by setup.sh live here
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 DEVICE = ("cuda" if torch.cuda.is_available()
           else "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()
           else "cpu")
@@ -61,6 +65,25 @@ def crop_batch(imgs_uint8, dx=0, dy=0, size=CROP):
     assert 0 <= dx <= 16 and 0 <= dy <= 16, "shifts must stay inside the stored image (0..16)"
     ox, oy = BASE + dx, BASE + dy
     return to_tensor(imgs_uint8[:, oy:oy + size, ox:ox + size])
+
+
+def rotate(x, degrees):
+    """Rotate a float batch (B, 3, H, W) about its center by `degrees` (counter-clockwise), bilinear interpolation,
+    edges reflected. 0 degrees returns x unchanged."""
+    if degrees == 0:
+        return x
+    th = torch.tensor(degrees * np.pi / 180.0)
+    c, s_ = torch.cos(th), torch.sin(th)
+    A = torch.tensor([[c, -s_, 0.0], [s_, c, 0.0]]).unsqueeze(0).repeat(len(x), 1, 1).float()
+    grid = F.affine_grid(A, list(x.shape), align_corners=False)
+    return F.grid_sample(x, grid, mode="bilinear", padding_mode="reflection", align_corners=False)
+
+
+def crop_rotated(imgs_uint8, degrees, size=CROP):
+    """The 224x224 center window of the 256x256 images after rotating them by `degrees` (use 0 to 5)."""
+    x = rotate(to_tensor(imgs_uint8), degrees)
+    o = (x.shape[-1] - size) // 2
+    return x[..., o:o + size, o:o + size]
 
 
 # ----------------------------------------------------------------------------- models
@@ -138,14 +161,6 @@ def gaussian_blur(x, sigma):
     return x if sigma <= 0 else blur_separable(x, gaussian_kernel1d(sigma))
 
 
-def blurpool_filter(size=4):
-    """The binomial low-pass used by BlurPool: [1 3 3 1]/8 for size 4 (also 2, 3, 5, 6, 7)."""
-    a = {1: [1.], 2: [1., 1.], 3: [1., 2., 1.], 4: [1., 3., 3., 1.], 5: [1., 4., 6., 4., 1.],
-         6: [1., 5., 10., 10., 5., 1.], 7: [1., 6., 15., 20., 15., 6., 1.]}[size]
-    a = torch.tensor(a)
-    return a / a.sum()
-
-
 def decimate(x, factor, phase=0):
     """Direct subsampling: keep every `factor`-th pixel, starting at row/column `phase`. No filtering."""
     return x[..., phase::factor, phase::factor]
@@ -159,23 +174,6 @@ def resize(x, size, mode="bilinear", antialias=False):
     return F.interpolate(x, size=size, mode=mode, **kw)
 
 
-# ----------------------------------------------------------------------------- test patterns
-def zone_plate(n=512):
-    """Zone plate: horizontal and vertical frequency rise linearly from the centre; reaches 0.5 cycle/pixel
-    (the Nyquist limit) at the edge midpoints. Returns a (1, 1, n, n) float tensor in [0, 1]."""
-    y, x = np.mgrid[-n // 2:n // 2, -n // 2:n // 2].astype(np.float64)
-    r2 = x ** 2 + y ** 2
-    img = 0.5 + 0.5 * np.cos(np.pi * r2 / n)       # instantaneous frequency = r/n cycles per pixel
-    return torch.from_numpy(img).float()[None, None]
-
-
-def chirp_1d(n=512):
-    """Horizontal chirp, (1, 1, 64, n): frequency rises from 0 to 0.5 cycle/pixel along x."""
-    x = np.arange(n, dtype=np.float64)
-    row = 0.5 + 0.5 * np.sin(np.pi * x ** 2 / (2 * n))
-    return torch.from_numpy(np.tile(row, (64, 1))).float()[None, None]
-
-
 # ----------------------------------------------------------------------------- colour helpers
 def srgb_to_linear(x):
     return torch.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
@@ -186,24 +184,17 @@ def linear_to_srgb(x):
     return torch.where(x <= 0.0031308, x * 12.92, 1.055 * x ** (1 / 2.4) - 0.055)
 
 
-def to_gray(x):
-    """Luminance of an sRGB batch, in linear light, as (B, 1, H, W)."""
-    lin = srgb_to_linear(x)
-    return (0.2126 * lin[:, 0:1] + 0.7152 * lin[:, 1:2] + 0.0722 * lin[:, 2:3])
+
+# ----------------------------------------------------------------------------- reducing colour depth
+def quantize(x, bits=4):
+    """Round every colour channel to 2**bits levels (8 bits = the original, 4 bits = 16 levels per channel).
+    Smooth gradients turn into visible bands."""
+    n = 2 ** bits - 1
+    return torch.round(x.clamp(0, 1) * n) / n
 
 
-# ----------------------------------------------------------------------------- dithering
-def bayer_matrix(n):
-    """n x n ordered-dither matrix (n = 2, 4, 8, 16), entries 0..n*n-1."""
-    m = np.array([[0, 2], [3, 1]])
-    while m.shape[0] < n:
-        m = np.block([[4 * m, 4 * m + 2], [4 * m + 3, 4 * m + 1]])
-    assert m.shape[0] == n, "n must be a power of two"
-    return m
-
-
-def _floyd_steinberg(img):
-    """Error diffusion on one (H, W) array in [0, 1] (serpentine scan). Returns {0, 1}."""
+def _floyd_steinberg(img, n):
+    """Error diffusion on one (H, W) array in [0, 1] with n+1 output levels (serpentine scan)."""
     a = img.astype(np.float64).copy()
     h, w = a.shape
     out = np.zeros_like(a)
@@ -212,7 +203,7 @@ def _floyd_steinberg(img):
         d = 1 if y % 2 == 0 else -1
         for x in xs:
             old = a[y, x]
-            new = 1.0 if old >= 0.5 else 0.0
+            new = min(1.0, max(0.0, round(old * n) / n))
             out[y, x] = new
             e = old - new
             if 0 <= x + d < w:
@@ -226,31 +217,14 @@ def _floyd_steinberg(img):
     return out
 
 
-def dither(x, method="floyd", linear=True, seed=0):
-    """Reduce a batch to two levels (black or white), returned as 3 identical channels, values in {0, 1}.
-    method: 'threshold' (fixed cut at middle gray), 'random' (random threshold per pixel), 'bayer2', 'bayer4',
-    'bayer8' (ordered dither with that matrix), 'floyd' (Floyd-Steinberg error diffusion, slow: about 0.1 s
-    per 224x224 image). linear=True dithers the linear-light luminance, so the fraction of white pixels equals
-    the brightness (blurring the result then gives the right gray); linear=False dithers the sRGB numbers.
-    The output is in the same encoding the networks expect (sRGB 0 or 1)."""
-    g = to_gray(x) if linear else (0.2126 * x[:, 0:1] + 0.7152 * x[:, 1:2] + 0.0722 * x[:, 2:3])
-    g = g.clamp(0, 1)
-    b, _, h, w = g.shape
-    if method == "threshold":
-        out = ((linear_to_srgb(g) if linear else g) >= 0.5).float()   # cut at middle gray as displayed
-    elif method == "random":
-        rng = torch.Generator().manual_seed(seed)
-        out = (g >= torch.rand(g.shape, generator=rng)).float()
-    elif method.startswith("bayer"):
-        n = int(method[5:])
-        t = (torch.from_numpy(bayer_matrix(n)).float() + 0.5) / (n * n)
-        t = t.repeat(h // n + 1, w // n + 1)[:h, :w]
-        out = (g >= t).float()
-    elif method == "floyd":
-        out = torch.from_numpy(np.stack([_floyd_steinberg(gi[0].numpy()) for gi in g])).float()[:, None]
-    else:
-        raise ValueError(method)
-    return out.repeat(1, 3, 1, 1)
+def dither(x, bits=4):
+    """Reduce every colour channel to 2**bits levels like `quantize`, but spread the rounding error to the
+    neighbouring pixels (Floyd-Steinberg error diffusion, each channel on its own), so that bands turn into fine
+    noise whose local average is the original colour. Slow: about 0.2 s per 224x224 image. Returns (B, 3, H, W)."""
+    n = 2 ** bits - 1
+    xs = x.clamp(0, 1).cpu().numpy()
+    out = np.stack([[_floyd_steinberg(img[c], n) for c in range(3)] for img in xs])
+    return torch.from_numpy(out).float()
 
 
 def view_from_far(x, sigma, linear=True):
@@ -271,5 +245,5 @@ if __name__ == "__main__":
     for name, m in ms.items():
         p = probs(m, x)
         print(f"{name:12s} top-1 {[class_name(i) for i in top1(p)]}  p(true) {np.round(ptrue(p, labels), 2)}")
-    d = dither(x[:1], "floyd")
-    print("dither ok:", tuple(d.shape), "fraction white", float(d.mean()), "| device:", DEVICE)
+    d = dither(x[:1], 2)
+    print("dither ok:", tuple(d.shape), "levels per channel", len(torch.unique(d)), "| device:", DEVICE)
